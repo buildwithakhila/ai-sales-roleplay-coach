@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>STT Demo — mic → live transcript</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+  h1 { font-size: 1.25rem; }
+  button { font-size: 1rem; padding: 8px 16px; margin-right: 8px; cursor: pointer; }
+  #status { color: #666; margin: 12px 0; }
+  #transcript { border: 1px solid #ddd; border-radius: 8px; padding: 16px; min-height: 160px; white-space: pre-wrap; }
+  .partial { color: #888; }
+  .final { color: #111; }
+</style>
+</head>
+<body>
+  <h1>Week 1 demo: mic → AssemblyAI live transcript</h1>
+  <p>Isolated demo — no LLM, no TTS, no persona. Just: can we get live text out of a mic reliably?</p>
+  <button id="startBtn">Start</button>
+  <button id="stopBtn" disabled>Stop</button>
+  <div id="status">idle</div>
+  <div id="transcript"></div>
+
+  <script src="client.js"></script>
+</body>
+</html>
