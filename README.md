@@ -11,12 +11,12 @@ repo (coming in Week 3) for the full product write-up.
 Two speech technologies, opposite directions:
 
 - **Speech-to-text (STT):** [AssemblyAI](https://www.assemblyai.com/) Realtime Streaming API — the rep's mic audio becomes a live transcript.
-- **Text-to-speech (TTS):** [ElevenLabs](https://elevenlabs.io/) — turns the AI customer persona's written reply into audio.
+- **Text-to-speech (TTS):** [Deepgram Aura](https://deepgram.com/) — turns the AI customer persona's written reply into audio. (Originally planned as ElevenLabs per the build plan — switched in Week 1 because ElevenLabs' free tier blocks *all* voices via the API, including ones added to "My Voices"; Deepgram's free trial credit has no such restriction. Revisit if/when there's budget for a paid ElevenLabs plan.)
 
 Full pipeline (target — see Week-by-week below for what's built so far):
 
 1. Browser mic → WebSocket → AssemblyAI Realtime STT → live transcript
-2. Transcript → customer-persona LLM (in-character reply) → ElevenLabs TTS → played back as "the customer"
+2. Transcript → customer-persona LLM (in-character reply) → Deepgram TTS → played back as "the customer"
 3. Transcript → coaching LLM (parallel, lighter/faster) → text nudges in a sidebar
 4. End of session → one more LLM call → scorecard (strengths, missed opportunities, score, drills)
 
@@ -24,7 +24,7 @@ Full pipeline (target — see Week-by-week below for what's built so far):
 
 - **Week 1 (this repo, so far):** de-risk the two hardest unknowns in isolation.
   - `stt-demo/` — raw mic → live transcript, working end to end against AssemblyAI.
-  - `tts-demo/` — bare text → spoken audio, working end to end against ElevenLabs.
+  - `tts-demo/` — bare text → spoken audio, working end to end against Deepgram Aura.
   - Deliberately kept separate so an STT bug and a TTS bug can never be confused with each other.
 - **Week 2:** wire STT → persona LLM → TTS into one live back-and-forth; 2–3 customer personas.
 - **Week 3:** coaching-nudge pass + post-session scorecard + real UI.
@@ -37,7 +37,7 @@ Requires Node.js 18+ (native `fetch` support).
 ```bash
 npm install
 cp .env.example .env
-# fill in ASSEMBLYAI_API_KEY and ELEVENLABS_API_KEY in .env
+# fill in ASSEMBLYAI_API_KEY and DEEPGRAM_API_KEY in .env
 npm start
 ```
 
@@ -53,8 +53,8 @@ Both demos are self-contained pages backed by two small server routes
   connects *directly* to AssemblyAI's streaming WebSocket with that token, captures mic audio via
   the Web Audio API, downsamples it to 16kHz PCM16, and streams it up as it talks. Transcripts
   (partial + final) come back as JSON `Turn` messages.
-- **TTS:** the browser POSTs text to the server (`POST /api/tts`), the server calls ElevenLabs'
-  REST API with the real key, and streams the resulting MP3 back to the browser to play.
+- **TTS:** the browser POSTs text to the server (`POST /api/tts`), the server calls Deepgram's
+  Aura REST API with the real key, and streams the resulting MP3 back to the browser to play.
 
 ## Getting API keys
 
@@ -64,8 +64,8 @@ hackathon's own signup link (Challenge tab → Resources → "Sign up for an API
 into lablab.ai) so the hackathon credits get attached to the new account. Grab the API key from
 your AssemblyAI dashboard.
 
-**ElevenLabs:** sign up at [elevenlabs.io](https://elevenlabs.io/sign-up), grab an API key from
-Settings → API Keys. The free tier is enough for this demo.
+**Deepgram:** sign up at [console.deepgram.com/signup](https://console.deepgram.com/signup)
+(free trial credit, no card usually required), grab an API key from the dashboard.
 
 ## Deploying
 

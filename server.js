@@ -2,9 +2,16 @@
 //
 // Two independent, isolated routes on purpose (see README):
 //   GET  /api/stt-token   -> mints a short-lived AssemblyAI token for the browser
-//   POST /api/tts         -> calls ElevenLabs TTS server-side and streams audio back
+//   POST /api/tts         -> calls Deepgram Aura TTS server-side and streams audio back
 //
-// Neither the AssemblyAI key nor the ElevenLabs key is ever sent to the browser.
+// Neither the AssemblyAI key nor the Deepgram key is ever sent to the browser.
+//
+// TTS vendor note: originally built against ElevenLabs per the build plan, but
+// ElevenLabs' free tier blocks ALL voices (including "premade" ones) via the
+// API - "Voice Library voices are not available via the API to free tier
+// users" - full stop, even if you add the voice to "My Voices" first. Rather
+// than pay to unblock it during Week 1, switched to Deepgram Aura, which has
+// a generous free trial credit and no such restriction.
 require("dotenv").config();
 const express = require("express");
 const path = require("path");
@@ -14,9 +21,8 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const ELEVENLABS_VOICE_ID =
-  process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM"; // stock "Rachel" voice
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
+const DEEPGRAM_TTS_MODEL = process.env.DEEPGRAM_TTS_MODEL || "aura-2-thalia-en";
 
 // ---- STT demo -------------------------------------------------------------
 
@@ -50,37 +56,36 @@ app.get("/api/stt-token", async (req, res) => {
 // ---- TTS demo ---------------------------------------------------------
 
 app.post("/api/tts", async (req, res) => {
-  if (!ELEVENLABS_API_KEY) {
+  if (!DEEPGRAM_API_KEY) {
     return res
       .status(500)
-      .json({ error: "ELEVENLABS_API_KEY is not set on the server (.env)" });
+      .json({ error: "DEEPGRAM_API_KEY is not set on the server (.env)" });
   }
   const { text } = req.body || {};
   if (!text || !text.trim()) {
     return res.status(400).json({ error: "Missing 'text' in request body" });
   }
   try {
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}?output_format=mp3_44100_128`;
+    const url = `https://api.deepgram.com/v1/speak?model=${encodeURIComponent(
+      DEEPGRAM_TTS_MODEL
+    )}`;
     const r = await fetch(url, {
       method: "POST",
       headers: {
-        "xi-api-key": ELEVENLABS_API_KEY,
+        Authorization: `Token ${DEEPGRAM_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        text,
-        model_id: "eleven_multilingual_v2",
-      }),
+      body: JSON.stringify({ text }),
     });
     if (!r.ok) {
       const body = await r.text();
-      console.error("ElevenLabs error:", r.status, body);
+      console.error("Deepgram TTS error:", r.status, body);
       return res
         .status(r.status)
-        .json({ error: "ElevenLabs TTS request failed", detail: body });
+        .json({ error: "Deepgram TTS request failed", detail: body });
     }
     const buf = Buffer.from(await r.arrayBuffer());
-    res.set("Content-Type", "audio/mpeg");
+    res.set("Content-Type", r.headers.get("content-type") || "audio/mpeg");
     res.send(buf);
   } catch (err) {
     console.error(err);
