@@ -130,12 +130,21 @@ async function handleRepTurn(text) {
       );
     }
     const blob = await ttsRes.blob();
+    console.log("TTS audio blob:", blob.size, "bytes,", blob.type);
+    if (blob.size === 0) throw new Error("tts returned an empty audio blob");
     player.src = URL.createObjectURL(blob);
 
-    await new Promise((resolve) => {
+    await new Promise((resolve, reject) => {
       player.onended = resolve;
-      player.onerror = resolve;
-      player.play().catch(resolve);
+      player.onerror = () => reject(new Error("audio element failed to play the response"));
+      player.play().then(resolve).catch((err) => {
+        // Most likely a browser autoplay-block (NotAllowedError). The <audio>
+        // element still has visible controls, so the user can hit play
+        // manually — don't hang the turn waiting for that, just move on.
+        console.error("player.play() rejected:", err);
+        addLogLine("System", "⚠️ Autoplay blocked (" + err.name + ") — hit play on the audio bar below.", "persona");
+        resolve();
+      });
     });
   } catch (err) {
     console.error(err);
