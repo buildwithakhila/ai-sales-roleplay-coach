@@ -88,12 +88,16 @@ function getPersona(id) {
 }
 
 function listPersonasForClient() {
-  return PERSONAS.map(({ id, name, role, difficulty, tagline }) => ({
+  // voiceModel is not secret (it's just a Deepgram model id) and the client
+  // needs it to ask /api/tts for the right voice per persona — leaving it
+  // out here was the bug that made every persona default to the same voice.
+  return PERSONAS.map(({ id, name, role, difficulty, tagline, voiceModel }) => ({
     id,
     name,
     role,
     difficulty,
     tagline,
+    voiceModel,
   }));
 }
 
