@@ -20,17 +20,31 @@ Full pipeline (target — see Week-by-week below for what's built so far):
 3. Transcript → coaching LLM (parallel, lighter/faster) → text nudges in a sidebar
 4. End of session → one more LLM call → scorecard (strengths, missed opportunities, score, drills)
 
+**LLM (Week 2):** the persona's replies come from [AssemblyAI's LLM Gateway](https://www.assemblyai.com/docs/llm-gateway/overview)
+(`llm-gateway.assemblyai.com`, OpenAI-SDK-compatible `/v1/chat/completions`) rather than a
+separate OpenAI/Anthropic key — same `ASSEMBLYAI_API_KEY` you already have, no new signup, 25+
+models available (currently defaulting to `claude-haiku-4-5-20251001` for low-latency in-call
+replies), and it keeps the story tied back to AssemblyAI for judging on "application of
+technology." Override with `ASSEMBLYAI_LLM_URL` / `ASSEMBLYAI_LLM_MODEL` in `.env` if needed.
+
 ## Week-by-week status
 
-- **Week 1 (this repo, so far):** de-risk the two hardest unknowns in isolation.
+- **Week 1:** de-risk the two hardest unknowns in isolation.
   - `stt-demo/` — raw mic → live transcript, working end to end against AssemblyAI.
   - `tts-demo/` — bare text → spoken audio, working end to end against Deepgram Aura.
   - Deliberately kept separate so an STT bug and a TTS bug can never be confused with each other.
-- **Week 2:** wire STT → persona LLM → TTS into one live back-and-forth; 2–3 customer personas.
+- **Week 2 (this repo, so far):** wire STT → persona LLM → TTS into one live back-and-forth.
+  - `roleplay-demo/` — pick one of 3 customer personas (skeptical CFO / price-sensitive
+    SMB owner / technical IT director, each a different difficulty and Deepgram voice),
+    then have a live back-and-forth call: your mic → AssemblyAI transcript → the
+    persona's in-character reply from AssemblyAI's LLM Gateway → spoken back via
+    Deepgram Aura. Turn-taking rides AssemblyAI's own `end_of_turn` flag, so no
+    separate silence-detection logic was needed.
+  - Not yet built: the coaching-nudge sidebar and post-session scorecard — that's Week 3.
 - **Week 3:** coaching-nudge pass + post-session scorecard + real UI.
 - **Week 4:** deploy, demo video, slide deck, submit.
 
-## Running the Week 1 demos
+## Running the demos
 
 Requires Node.js 18+ (native `fetch` support).
 
@@ -43,8 +57,11 @@ npm start
 
 Then open:
 
-- `http://localhost:3000/stt-demo/` — click "Start", speak into your mic, watch the live transcript.
-- `http://localhost:3000/tts-demo/` — type text, click "Speak", hear it played back.
+- `http://localhost:3000/roleplay-demo/` — Week 2: pick a customer persona and have a live
+  roleplay call with them (mic in, persona voice back).
+- `http://localhost:3000/stt-demo/` — Week 1: click "Start", speak into your mic, watch the
+  live transcript.
+- `http://localhost:3000/tts-demo/` — Week 1: type text, click "Speak", hear it played back.
 
 Both demos are self-contained pages backed by two small server routes
 (`server.js`): the browser never sees your raw API keys.
