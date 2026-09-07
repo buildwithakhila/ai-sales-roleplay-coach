@@ -96,6 +96,7 @@ async function handleRepTurn(text) {
 
   micMuted = true;
   setStatus(selectedPersona.name + " is thinking…");
+  let errored = false;
 
   try {
     const replyRes = await fetch("/api/persona-reply", {
@@ -103,8 +104,13 @@ async function handleRepTurn(text) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ personaId: selectedPersona.id, history }),
     });
-    const replyData = await replyRes.json();
-    if (!replyRes.ok) throw new Error(replyData.error || "persona-reply failed");
+    const replyData = await replyRes.json().catch(() => ({}));
+    if (!replyRes.ok) {
+      throw new Error(
+        "persona-reply " + replyRes.status + ": " + (replyData.error || "unknown error") +
+          (replyData.detail ? " — " + replyData.detail : "")
+      );
+    }
     const reply = replyData.reply;
 
     history.push({ role: "assistant", content: reply });
@@ -118,7 +124,10 @@ async function handleRepTurn(text) {
     });
     if (!ttsRes.ok) {
       const d = await ttsRes.json().catch(() => ({}));
-      throw new Error(d.error || "tts failed");
+      throw new Error(
+        "tts " + ttsRes.status + ": " + (d.error || "unknown error") +
+          (d.detail ? " — " + d.detail : "")
+      );
     }
     const blob = await ttsRes.blob();
     player.src = URL.createObjectURL(blob);
@@ -130,10 +139,12 @@ async function handleRepTurn(text) {
     });
   } catch (err) {
     console.error(err);
+    errored = true;
     setStatus("error: " + err.message);
+    addLogLine("System", "⚠️ " + err.message, "persona");
   } finally {
     micMuted = false;
-    if (socket && socket.readyState === WebSocket.OPEN) {
+    if (!errored && socket && socket.readyState === WebSocket.OPEN) {
       setStatus("connected — listening");
     }
   }
