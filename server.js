@@ -38,7 +38,7 @@ const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
 const DEEPGRAM_TTS_MODEL = process.env.DEEPGRAM_TTS_MODEL || "aura-2-thalia-en";
 const ASSEMBLYAI_LLM_URL =
   process.env.ASSEMBLYAI_LLM_URL || "https://llm-gateway.assemblyai.com/v1/chat/completions";
-const ASSEMBLYAI_LLM_MODEL = process.env.ASSEMBLYAI_LLM_MODEL || "claude-haiku-4-5-20251001";
+const ASSEMBLYAI_LLM_MODEL = process.env.ASSEMBLYAI_LLM_MODEL || "qwen3.5-4b-32k-fast";
 
 // ---- STT demo -------------------------------------------------------------
 

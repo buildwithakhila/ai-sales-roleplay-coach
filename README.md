@@ -23,8 +23,7 @@ Full pipeline (target — see Week-by-week below for what's built so far):
 **LLM (Week 2):** the persona's replies come from [AssemblyAI's LLM Gateway](https://www.assemblyai.com/docs/llm-gateway/overview)
 (`llm-gateway.assemblyai.com`, OpenAI-SDK-compatible `/v1/chat/completions`) rather than a
 separate OpenAI/Anthropic key — same `ASSEMBLYAI_API_KEY` you already have, no new signup, 25+
-models available (currently defaulting to `claude-haiku-4-5-20251001` for low-latency in-call
-replies), and it keeps the story tied back to AssemblyAI for judging on "application of
+models available (defaulting to `qwen3.5-4b-32k-fast` — the model AssemblyAI's own docs use in every example, and the one that turned out to actually be enabled on this account; Claude/GPT/Gemini via the Gateway returned "account does not have access to this LLM Gateway model" — worth revisiting if/when that opens up), and it keeps the story tied back to AssemblyAI for judging on "application of
 technology." Override with `ASSEMBLYAI_LLM_URL` / `ASSEMBLYAI_LLM_MODEL` in `.env` if needed.
 
 ## Week-by-week status
