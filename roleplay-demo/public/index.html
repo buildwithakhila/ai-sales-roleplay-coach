@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Roleplay Demo — live sales call vs AI customer</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+  h1 { font-size: 1.25rem; }
+  p.sub { color: #666; margin-top: -8px; }
+  label { font-size: 0.9rem; color: #444; display: block; margin-bottom: 4px; }
+  select { font-size: 1rem; padding: 6px; margin-bottom: 8px; }
+  #personaCard { border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; background: #fafafa; }
+  #personaCard .name { font-weight: 600; }
+  #personaCard .difficulty { display: inline-block; font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: #eee; margin-left: 8px; }
+  button { font-size: 1rem; padding: 8px 16px; margin-right: 8px; cursor: pointer; }
+  #status { color: #666; margin: 12px 0; }
+  #log { border: 1px solid #ddd; border-radius: 8px; padding: 16px; min-height: 240px; white-space: pre-wrap; }
+  .turn { margin-bottom: 10px; }
+  .turn .who { font-weight: 600; }
+  .turn.rep .who { color: #1a4; }
+  .turn.persona .who { color: #14a; }
+  .partial { color: #999; font-style: italic; }
+</style>
+</head>
+<body>
+  <h1>Week 2 demo: live roleplay call vs AI customer</h1>
+  <p class="sub">STT (AssemblyAI) → persona LLM (AssemblyAI LLM Gateway) → TTS (Deepgram Aura). Pick a persona, hit Start, and pitch them.</p>
+
+  <label for="personaSelect">Customer persona</label>
+  <select id="personaSelect"></select>
+  <div id="personaCard">Loading personas…</div>
+
+  <button id="startBtn">Start call</button>
+  <button id="stopBtn" disabled>End call</button>
+  <div id="status">idle</div>
+
+  <div id="log"></div>
+
+  <audio id="player" style="display:none;"></audio>
+
+  <script src="client.js"></script>
+</body>
+</html>
