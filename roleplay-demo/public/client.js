@@ -25,6 +25,7 @@ let sourceNode = null;
 let processorNode = null;
 let socket = null;
 let micMuted = false; // true while persona is "thinking" or speaking
+let turnInFlight = false; // true while a persona-reply/tts round trip is in progress
 let history = []; // [{role: 'user'|'assistant', content: string}]
 
 const SAMPLE_RATE = 16000;
@@ -90,26 +91,40 @@ function floatTo16BitPCM(float32Array) {
   return out;
 }
 
+async function fetchPersonaReply(body, attempt) {
+  const r = await fetch("/api/persona-reply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (r.status === 429 && attempt < 2) {
+    // Hackathon free-tier rate limit is easy to hit with rapid back-and-forth
+    // testing. One short backoff-and-retry before giving up and surfacing it.
+    const waitMs = 1500 * (attempt + 1);
+    setStatus(selectedPersona.name + " — rate limited, retrying in " + Math.round(waitMs / 1000) + "s…");
+    await new Promise((res) => setTimeout(res, waitMs));
+    return fetchPersonaReply(body, attempt + 1);
+  }
+  return r;
+}
+
 async function handleRepTurn(text) {
   if (!text.trim()) return;
   history.push({ role: "user", content: text });
 
+  turnInFlight = true;
   micMuted = true;
   setStatus(selectedPersona.name + " is thinking…");
   let errored = false;
 
   try {
-    const replyRes = await fetch("/api/persona-reply", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ personaId: selectedPersona.id, history }),
-    });
+    const replyRes = await fetchPersonaReply({ personaId: selectedPersona.id, history }, 0);
     const replyData = await replyRes.json().catch(() => ({}));
     if (!replyRes.ok) {
-      throw new Error(
-        "persona-reply " + replyRes.status + ": " + (replyData.error || "unknown error") +
-          (replyData.detail ? " — " + replyData.detail : "")
-      );
+      const friendly = replyRes.status === 429
+        ? "still rate limited after retrying — wait a bit longer between turns"
+        : (replyData.error || "unknown error") + (replyData.detail ? " — " + replyData.detail : "");
+      throw new Error("persona-reply " + replyRes.status + ": " + friendly);
     }
     const reply = replyData.reply;
 
@@ -152,6 +167,7 @@ async function handleRepTurn(text) {
     setStatus("error: " + err.message);
     addLogLine("System", "⚠️ " + err.message, "persona");
   } finally {
+    turnInFlight = false;
     micMuted = false;
     if (!errored && socket && socket.readyState === WebSocket.OPEN) {
       setStatus("connected — listening");
@@ -217,6 +233,13 @@ async function start() {
     const text = msg.transcript || "";
     if (!text) return;
     if (msg.end_of_turn) {
+      if (turnInFlight) {
+        // A stray/overlapping Turn arrived while we're still processing the
+        // last one (e.g. buffered audio finalizing right as we muted the
+        // mic) — drop it rather than firing another LLM call on top.
+        console.warn("Dropping overlapping turn (already in flight):", text);
+        return;
+      }
       addLogLine("You", text, "rep");
       handleRepTurn(text);
     } else {
