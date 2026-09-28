@@ -130,12 +130,12 @@ app.post("/api/persona-reply", async (req, res) => {
   }
 
   const messages = [
-    { role: "system", content: persona.systemPrompt },
+    { role: "system", content: persona.systemPrompt + "\n\nHARD LIMIT: reply in at most 2 short sentences (under 35 words). Never monologue." },
     ...history.map((m) => ({ role: m.role, content: m.content })),
   ];
 
   try {
-    const reply = await callLLM(messages, { maxTokens: 200 });
+    const reply = await callLLM(messages, { maxTokens: 90, waits: [1500, 2500] });
     res.json({ reply: reply.replace(/<think>[\s\S]*?<\/think>/g, "").trim() });
   } catch (err) {
     console.error("persona-reply error:", err.message);
@@ -161,10 +161,9 @@ function enqueueLLM(task) {
   return p.finally(() => { llmPending--; });
 }
 
-async function callLLM(messages, { maxTokens = 300, temperature } = {}) {
+async function callLLM(messages, { maxTokens = 300, temperature, waits = [2000, 4000, 8000, 12000] } = {}) {
   return enqueueLLM(async () => {
     let lastErr;
-    const waits = [2000, 4000, 8000, 12000];
     for (let attempt = 0; attempt <= waits.length; attempt++) {
       const body = { model: ASSEMBLYAI_LLM_MODEL, messages, max_tokens: maxTokens };
       if (temperature !== undefined) body.temperature = temperature;
@@ -214,6 +213,10 @@ function transcriptText(history, persona) {
     .join("\n");
 }
 
+// AI nudges cost one extra LLM call per turn; the free tier rate-limits that, so they
+// are opt-in (AI_NUDGES=1). Instant rule-based nudges in the browser cover the demo.
+const AI_NUDGES = process.env.AI_NUDGES === "1";
+
 const NUDGE_CATEGORIES = [
   "objection", "value", "discovery", "specifics", "next-step", "rapport", "concise", "good",
 ];
@@ -237,7 +240,7 @@ next step. If the rep just did something well, say so briefly.
 Respond with ONLY a JSON object, no other text:
 {"category": one of ${JSON.stringify(NUDGE_CATEGORIES)}, "nudge": "max 14 words, imperative, specific to this moment"}`;
 
-  if (llmPending >= 2 || Date.now() < llmCooldownUntil) return res.json({ nudge: null }); // keep the queue free for replies
+  if (!AI_NUDGES || llmPending >= 2 || Date.now() < llmCooldownUntil) return res.json({ nudge: null }); // keep the queue free for replies
 
   try {
     const raw = await callLLM(

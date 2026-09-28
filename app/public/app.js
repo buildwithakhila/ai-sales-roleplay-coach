@@ -149,6 +149,42 @@ function instantNudges(text, fillers) {
   }
 }
 
+// Instant, rule-based coaching: reacts to what the customer just asked for.
+// Zero LLM calls, so it never hits the rate limit and shows up before the rep answers.
+const RULES = [
+  ["proof", /(how much|what.{0,25}(cost|save|roi|payback)|number|percent|%|dollar|\$|figure|metric|proof|evidence|case study|prove)/i,
+    "value", "They want proof. Answer with one specific number or customer result."],
+  ["security", /(security|soc ?2|hipaa|compliance|encrypt|data residency|audit|gdpr|privacy)/i,
+    "specifics", "Name the exact certification or control. Skip 'we take security seriously'."],
+  ["price", /(cheaper|too expensive|budget|pricing|price|discount|competitor|other (two )?(agencies|vendors|options)|what we have)/i,
+    "objection", "Don't discount yet. Ask what they're comparing, then anchor on value."],
+  ["rollout", /(integrat|api|implement|rollout|migration|onboard|timeline|how long)/i,
+    "specifics", "Be concrete: timeline in weeks, who does what, what could go wrong."],
+];
+const NEXT_STEP_RE = /(pilot|demo|trial|next step|schedule|book|meeting|follow.?up|send you|call (you|on)|thursday|friday|monday|tuesday|wednesday)/i;
+let lastRuleId = null;
+let nextStepNudged = false;
+function ruleNudge(reply) {
+  const repTurns = history.filter((m) => m.role === "user").map((m) => m.content);
+  const lastRep = repTurns[repTurns.length - 1] || "";
+  for (const [id, re, cat, msg] of RULES) {
+    if (re.test(reply) && id !== lastRuleId) {
+      lastRuleId = id;
+      addNudge(cat, msg, "instant");
+      return;
+    }
+  }
+  lastRuleId = null;
+  if (repTurns.length >= 3 && !nextStepNudged && !repTurns.some((t) => NEXT_STEP_RE.test(t))) {
+    nextStepNudged = true;
+    addNudge("next-step", "You haven't proposed a next step yet. Ask for a concrete follow-up.", "instant");
+    return;
+  }
+  if (repTurns.length >= 2 && !/\?/.test(lastRep)) {
+    addNudge("discovery", "Ask a question about their situation before pitching more.", "instant");
+  }
+}
+
 async function fetchNudge(id) {
   try {
     const r = await fetch("/api/coach-nudge", {
@@ -216,6 +252,7 @@ async function handleRepTurn(text, id) {
 
     // Coaching nudge runs while the TTS audio is fetched/played (LLM calls stay
     // sequential per turn, which keeps us under the free-tier rate limit).
+    ruleNudge(reply);
     fetchNudge(id);
 
     setStatus(selectedPersona.name.split(" ")[0] + " is speaking…", "speaking");
@@ -331,6 +368,8 @@ async function startCall() {
   mediaStream = stream;
   const id = ++callId;
   history = [];
+  lastRuleId = null;
+  nextStepNudged = false;
   repStats = { words: 0, personaWords: 0, turns: 0, fillers: 0, fillerBreakdown: {} };
   turnInFlight = false;
   micMuted = false;
