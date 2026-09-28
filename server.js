@@ -130,7 +130,10 @@ app.post("/api/persona-reply", async (req, res) => {
   }
 
   const messages = [
-    { role: "system", content: persona.systemPrompt + "\n\nHARD LIMIT: reply in at most 2 short sentences (under 35 words). Never monologue." },
+    { role: "system", content: persona.systemPrompt + "\n\nGROUND RULES: You are the BUYER being pitched by a sales rep; never act as the seller and never describe a product you sell. " +
+        "Do not invent company names, prior meetings or facts about the rep's product. Only react to what the rep just said. " +
+        "If the rep only greets you, greet back in one short sentence and ask what this call is about. " +
+        "HARD LIMIT: at most 2 short sentences (under 30 words). Never monologue." },
     ...history.map((m) => ({ role: m.role, content: m.content })),
   ];
 
