@@ -257,6 +257,17 @@ Respond with ONLY a JSON object, no other text:
   }
 });
 
+// The small free-tier model sometimes attributes the customer's words to the rep.
+// Only keep the "best line" if it really appears in one of the rep's own turns.
+function verifiedRepQuote(quote, history) {
+  const norm = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  const q = norm(quote);
+  if (q.split(" ").length < 3) return "";
+  const repTurns = history.filter((m) => m.role === "user").map((m) => norm(m.content));
+  const head = q.split(" ").slice(0, 6).join(" ");
+  return repTurns.some((t) => t.includes(q) || t.includes(head)) ? String(quote).trim() : "";
+}
+
 const clampScore = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 const strList = (a, max) =>
   (Array.isArray(a) ? a : []).map((s) => String(s).trim()).filter(Boolean).slice(0, max);
@@ -316,7 +327,7 @@ Respond with ONLY a JSON object, no other text, in exactly this shape:
       },
       strengths: strList(p.strengths, 3),
       missed_opportunities: strList(p.missed_opportunities, 3),
-      best_moment: String(p.best_moment || "").trim(),
+      best_moment: verifiedRepQuote(p.best_moment, history),
       drills: strList(p.drills, 3),
     });
   } catch (err) {
