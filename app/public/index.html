@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sales Roleplay Coach</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">◉</span> Sales Roleplay Coach</div>
+  <div class="powered">Live voice practice · powered by AssemblyAI</div>
+</header>
+
+<!-- Screen 1: setup -->
+<main id="screen-setup" class="screen active">
+  <section class="hero">
+    <h1>Practice the call before it counts.</h1>
+    <p>Pitch an AI customer out loud. Get live coaching nudges while you talk and a scorecard when you hang up.</p>
+  </section>
+  <div id="personaGrid" class="persona-grid" aria-label="Choose a customer"></div>
+  <div class="actions">
+    <button id="startBtn" class="btn primary big">Start call</button>
+    <button id="sampleBtn" class="btn ghost" title="Skips the mic — scores a pre-written call with Marcus Webb">Score a sample call</button>
+  </div>
+  <p id="setupError" class="error" hidden></p>
+</main>
+
+<!-- Screen 2: live call -->
+<main id="screen-call" class="screen">
+  <div class="call-layout">
+    <section class="call-main">
+      <div class="call-head">
+        <div>
+          <div id="callPersonaName" class="call-name"></div>
+          <div id="callPersonaRole" class="call-role"></div>
+        </div>
+        <div class="call-head-right">
+          <span id="statusPill" class="pill">idle</span>
+          <span id="timer" class="timer">00:00</span>
+          <button id="stopBtn" class="btn danger">End call</button>
+        </div>
+      </div>
+      <div id="transcript" class="transcript" aria-live="polite"></div>
+      <div class="metrics">
+        <div class="metric"><div class="m-val" id="mTalk">0%</div><div class="m-label">your talk time</div></div>
+        <div class="metric"><div class="m-val" id="mFillers">0</div><div class="m-label">filler words</div></div>
+        <div class="metric"><div class="m-val" id="mTurns">0</div><div class="m-label">your turns</div></div>
+      </div>
+      <audio id="player" controls hidden></audio>
+    </section>
+    <aside class="coach">
+      <div class="coach-head"><span class="dot"></span> Live coach</div>
+      <div id="nudges" class="nudges">
+        <div class="nudge-empty">Nudges appear here as you talk. Just speak to start.</div>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<!-- Screen 3: results -->
+<main id="screen-results" class="screen">
+  <div id="resultsLoading" class="loading">
+    <div class="spinner"></div>
+    <p>Your coach is reviewing the call…</p>
+  </div>
+  <div id="resultsError" class="error-box" hidden>
+    <p id="resultsErrorMsg"></p>
+    <button id="retryScoreBtn" class="btn primary">Try scoring again</button>
+    <button class="btn ghost again">Back to start</button>
+  </div>
+  <div id="resultsBody" hidden>
+    <section class="score-top">
+      <div class="ring-wrap">
+        <svg viewBox="0 0 120 120" class="ring" aria-hidden="true">
+          <circle cx="60" cy="60" r="52" class="ring-bg"/>
+          <circle id="ringFg" cx="60" cy="60" r="52" class="ring-fg" stroke-dasharray="326.7" stroke-dashoffset="326.7"/>
+        </svg>
+        <div class="ring-label"><span id="overall">0</span><small>/100</small></div>
+      </div>
+      <div class="score-text">
+        <div id="resultsWho" class="eyebrow"></div>
+        <h2 id="headline"></h2>
+        <div id="statChips" class="chips"></div>
+      </div>
+    </section>
+
+    <section class="bars" id="bars"></section>
+
+    <section class="cols">
+      <div class="card good"><h3>What worked</h3><ul id="strengths"></ul></div>
+      <div class="card warn"><h3>Missed opportunities</h3><ul id="missed"></ul></div>
+    </section>
+
+    <section id="bestMomentCard" class="card quote" hidden>
+      <h3>Your best line</h3>
+      <blockquote id="bestMoment"></blockquote>
+    </section>
+
+    <section class="card"><h3>Drills for next time</h3><ol id="drills"></ol></section>
+
+    <div class="actions">
+      <button class="btn primary again">Practice again</button>
+    </div>
+  </div>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

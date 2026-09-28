@@ -167,21 +167,177 @@ app.post("/api/persona-reply", async (req, res) => {
   }
 });
 
+// ---- Week 3: coaching nudges + post-session scorecard ---------------------
+
+// Shared LLM Gateway helper with a server-side backoff on 429s (the hackathon
+// free tier rate-limits easily once each turn makes more than one call).
+async function callLLM(messages, { maxTokens = 300, temperature = 0.3 } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await fetch(ASSEMBLYAI_LLM_URL, {
+      method: "POST",
+      headers: { authorization: ASSEMBLYAI_API_KEY, "content-type": "application/json" },
+      body: JSON.stringify({
+        model: ASSEMBLYAI_LLM_MODEL,
+        messages,
+        max_tokens: maxTokens,
+        temperature,
+      }),
+    });
+    if (r.status === 429) {
+      lastErr = new Error("LLM Gateway rate limited (429)");
+      lastErr.status = 429;
+      await new Promise((res) => setTimeout(res, 1200 * (attempt + 1)));
+      continue;
+    }
+    if (!r.ok) {
+      const err = new Error("LLM Gateway error " + r.status + ": " + (await r.text()));
+      err.status = r.status;
+      throw err;
+    }
+    const data = await r.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) throw new Error("LLM Gateway returned no content");
+    return content;
+  }
+  throw lastErr;
+}
+
+// Pull the first JSON object out of a model reply (models sometimes wrap it in
+// prose or ```json fences, or emit <think> blocks).
+function extractJSON(text) {
+  const cleaned = String(text).replace(/<think>[\s\S]*?<\/think>/g, "");
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end <= start) throw new Error("no JSON object in model reply");
+  return JSON.parse(cleaned.slice(start, end + 1));
+}
+
+function transcriptText(history, persona) {
+  return history
+    .map((m) => (m.role === "user" ? "REP" : persona.name.toUpperCase()) + ": " + m.content)
+    .join("\n");
+}
+
+const NUDGE_CATEGORIES = [
+  "objection", "value", "discovery", "specifics", "next-step", "rapport", "concise", "good",
+];
+
+// Coaching nudge: reads the conversation so far and returns ONE short tip for
+// the rep's next move (shown as text in the sidebar, never spoken).
+app.post("/api/coach-nudge", async (req, res) => {
+  if (!ASSEMBLYAI_API_KEY) return res.status(500).json({ error: "ASSEMBLYAI_API_KEY is not set" });
+  const { personaId, history } = req.body || {};
+  const persona = getPersona(personaId);
+  if (!persona) return res.status(400).json({ error: `Unknown personaId: ${personaId}` });
+  if (!Array.isArray(history) || history.length === 0)
+    return res.status(400).json({ error: "Missing 'history' array" });
+
+  const system = `You are a live sales coach whispering in a rep's ear during a practice call with
+a simulated customer (${persona.name}, ${persona.role}). Read the conversation and give ONE coaching
+nudge for the rep's NEXT reply. Look for: an unaddressed or dodged objection, a vague claim that
+needs a number or proof point, a missed chance to ask a discovery question, rambling, or no clear
+next step. If the rep just did something well, say so briefly.
+
+Respond with ONLY a JSON object, no other text:
+{"category": one of ${JSON.stringify(NUDGE_CATEGORIES)}, "nudge": "max 14 words, imperative, specific to this moment"}`;
+
+  try {
+    const raw = await callLLM(
+      [
+        { role: "system", content: system },
+        { role: "user", content: "Conversation so far:\n" + transcriptText(history, persona) },
+      ],
+      { maxTokens: 120, temperature: 0.2 }
+    );
+    const parsed = extractJSON(raw);
+    const nudge = String(parsed.nudge || "").trim();
+    if (!nudge) return res.json({ nudge: null });
+    const category = NUDGE_CATEGORIES.includes(parsed.category) ? parsed.category : "value";
+    res.json({ nudge, category });
+  } catch (err) {
+    console.error("coach-nudge error:", err.message);
+    // Nudges are best-effort: never let them break the call.
+    res.status(err.status || 502).json({ error: "coach-nudge failed", detail: err.message });
+  }
+});
+
+const clampScore = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+const strList = (a, max) =>
+  (Array.isArray(a) ? a : []).map((s) => String(s).trim()).filter(Boolean).slice(0, max);
+
+// Post-session scorecard: one LLM call over the whole transcript.
+app.post("/api/scorecard", async (req, res) => {
+  if (!ASSEMBLYAI_API_KEY) return res.status(500).json({ error: "ASSEMBLYAI_API_KEY is not set" });
+  const { personaId, history, metrics } = req.body || {};
+  const persona = getPersona(personaId);
+  if (!persona) return res.status(400).json({ error: `Unknown personaId: ${personaId}` });
+  if (!Array.isArray(history) || history.filter((m) => m.role === "user").length < 1)
+    return res.status(400).json({ error: "Need at least one rep turn to score" });
+
+  const system = `You are an expert sales coach grading a practice call. The REP pitched a simulated
+customer (${persona.name}, ${persona.role}, difficulty: ${persona.difficulty}). Grade ONLY the rep.
+Be honest and specific — quote or reference what the rep actually said. Do not inflate scores;
+a rep who dodged objections or gave vague claims should score below 60.
+
+Respond with ONLY a JSON object, no other text, in exactly this shape:
+{
+ "overall": 0-100 integer,
+ "headline": "one-sentence verdict, max 20 words",
+ "categories": {
+   "discovery": 0-100,        // asked good questions to understand the customer's needs
+   "objection_handling": 0-100,
+   "value_articulation": 0-100, // specific, quantified, tied to the customer's problem
+   "closing": 0-100           // proposed a clear next step
+ },
+ "strengths": ["2-3 items, each one sentence, specific"],
+ "missed_opportunities": ["2-3 items, each one sentence, say what the rep should have said/done"],
+ "best_moment": "short quote from the rep's strongest line",
+ "drills": ["2-3 concrete practice drills for next time, each one sentence"]
+}`;
+
+  const metricsLine = metrics
+    ? `\nObjective metrics measured client-side: ${JSON.stringify(metrics)}`
+    : "";
+
+  try {
+    const raw = await callLLM(
+      [
+        { role: "system", content: system },
+        { role: "user", content: "Call transcript:\n" + transcriptText(history, persona) + metricsLine },
+      ],
+      { maxTokens: 900, temperature: 0.2 }
+    );
+    const p = extractJSON(raw);
+    const c = p.categories || {};
+    res.json({
+      overall: clampScore(p.overall),
+      headline: String(p.headline || "").trim(),
+      categories: {
+        discovery: clampScore(c.discovery),
+        objection_handling: clampScore(c.objection_handling),
+        value_articulation: clampScore(c.value_articulation),
+        closing: clampScore(c.closing),
+      },
+      strengths: strList(p.strengths, 3),
+      missed_opportunities: strList(p.missed_opportunities, 3),
+      best_moment: String(p.best_moment || "").trim(),
+      drills: strList(p.drills, 3),
+    });
+  } catch (err) {
+    console.error("scorecard error:", err.message);
+    res.status(err.status || 502).json({ error: "scorecard failed", detail: err.message });
+  }
+});
+
 // ---- static demo pages ------------------------------------------------
 
 app.use("/stt-demo", express.static(path.join(__dirname, "stt-demo/public")));
 app.use("/tts-demo", express.static(path.join(__dirname, "tts-demo/public")));
+app.use("/app", express.static(path.join(__dirname, "app/public")));
 app.use("/roleplay-demo", express.static(path.join(__dirname, "roleplay-demo/public")));
 
-app.get("/", (req, res) => {
-  res.send(
-    '<h1>AI Sales Roleplay Coach — demos</h1><ul>' +
-      '<li><a href="/roleplay-demo/">Week 2: live roleplay call vs AI customer</a></li>' +
-      '<li><a href="/stt-demo/">Week 1: STT demo (mic → live transcript)</a></li>' +
-      '<li><a href="/tts-demo/">Week 1: TTS demo (text → speech)</a></li>' +
-      "</ul>"
-  );
-});
+app.get("/", (req, res) => res.redirect("/app/"));
 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
