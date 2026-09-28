@@ -152,7 +152,8 @@ app.post("/api/persona-reply", async (req, res) => {
 // scorecard used to collide and 429), so we never have two calls in flight.
 let llmChain = Promise.resolve();
 let llmPending = 0;
-const LLM_GAP_MS = 500;
+const LLM_GAP_MS = 1200;
+let llmCooldownUntil = 0; // set on any 429: nudges pause so replies/scorecard get the quota
 function enqueueLLM(task) {
   llmPending++;
   const p = llmChain.then(task);
@@ -178,6 +179,7 @@ async function callLLM(messages, { maxTokens = 300, temperature } = {}) {
         if (attempt === waits.length) break;
         const ra = Number(r.headers.get("retry-after"));
         const wait = ra > 0 ? Math.min(ra * 1000, 15000) : waits[attempt];
+        llmCooldownUntil = Date.now() + 30000;
         console.warn("LLM 429, retrying in", wait, "ms");
         await new Promise((res) => setTimeout(res, wait));
         continue;
@@ -235,7 +237,7 @@ next step. If the rep just did something well, say so briefly.
 Respond with ONLY a JSON object, no other text:
 {"category": one of ${JSON.stringify(NUDGE_CATEGORIES)}, "nudge": "max 14 words, imperative, specific to this moment"}`;
 
-  if (llmPending >= 2) return res.json({ nudge: null }); // keep the queue free for replies
+  if (llmPending >= 2 || Date.now() < llmCooldownUntil) return res.json({ nudge: null }); // keep the queue free for replies
 
   try {
     const raw = await callLLM(
