@@ -135,35 +135,11 @@ app.post("/api/persona-reply", async (req, res) => {
   ];
 
   try {
-    const r = await fetch(ASSEMBLYAI_LLM_URL, {
-      method: "POST",
-      headers: {
-        authorization: ASSEMBLYAI_API_KEY,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: ASSEMBLYAI_LLM_MODEL,
-        messages,
-        max_tokens: 200,
-      }),
-    });
-    if (!r.ok) {
-      const body = await r.text();
-      console.error("LLM Gateway error:", r.status, body);
-      return res
-        .status(r.status)
-        .json({ error: "LLM Gateway request failed", detail: body });
-    }
-    const data = await r.json();
-    const reply = data?.choices?.[0]?.message?.content;
-    if (!reply) {
-      console.error("LLM Gateway: no reply in response", JSON.stringify(data));
-      return res.status(502).json({ error: "LLM Gateway returned no reply" });
-    }
-    res.json({ reply: reply.trim() });
+    const reply = await callLLM(messages, { maxTokens: 200 });
+    res.json({ reply: reply.replace(/<think>[\s\S]*?<\/think>/g, "").trim() });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: String(err) });
+    console.error("persona-reply error:", err.message);
+    res.status(err.status || 500).json({ error: "LLM Gateway request failed", detail: err.message });
   }
 });
 
@@ -171,36 +147,53 @@ app.post("/api/persona-reply", async (req, res) => {
 
 // Shared LLM Gateway helper with a server-side backoff on 429s (the hackathon
 // free tier rate-limits easily once each turn makes more than one call).
-async function callLLM(messages, { maxTokens = 300, temperature = 0.3 } = {}) {
-  let lastErr;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const r = await fetch(ASSEMBLYAI_LLM_URL, {
-      method: "POST",
-      headers: { authorization: ASSEMBLYAI_API_KEY, "content-type": "application/json" },
-      body: JSON.stringify({
-        model: ASSEMBLYAI_LLM_MODEL,
-        messages,
-        max_tokens: maxTokens,
-        temperature,
-      }),
-    });
-    if (r.status === 429) {
-      lastErr = new Error("LLM Gateway rate limited (429)");
-      lastErr.status = 429;
-      await new Promise((res) => setTimeout(res, 1200 * (attempt + 1)));
-      continue;
+// All LLM Gateway traffic goes through ONE serial queue with a small gap between
+// calls. The hackathon free tier rate-limits bursts (persona reply + nudge +
+// scorecard used to collide and 429), so we never have two calls in flight.
+let llmChain = Promise.resolve();
+let llmPending = 0;
+const LLM_GAP_MS = 500;
+function enqueueLLM(task) {
+  llmPending++;
+  const p = llmChain.then(task);
+  llmChain = p.catch(() => {}).then(() => new Promise((r) => setTimeout(r, LLM_GAP_MS)));
+  return p.finally(() => { llmPending--; });
+}
+
+async function callLLM(messages, { maxTokens = 300, temperature } = {}) {
+  return enqueueLLM(async () => {
+    let lastErr;
+    const waits = [2000, 4000, 8000, 12000];
+    for (let attempt = 0; attempt <= waits.length; attempt++) {
+      const body = { model: ASSEMBLYAI_LLM_MODEL, messages, max_tokens: maxTokens };
+      if (temperature !== undefined) body.temperature = temperature;
+      const r = await fetch(ASSEMBLYAI_LLM_URL, {
+        method: "POST",
+        headers: { authorization: ASSEMBLYAI_API_KEY, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (r.status === 429) {
+        lastErr = new Error("LLM Gateway rate limited (429)");
+        lastErr.status = 429;
+        if (attempt === waits.length) break;
+        const ra = Number(r.headers.get("retry-after"));
+        const wait = ra > 0 ? Math.min(ra * 1000, 15000) : waits[attempt];
+        console.warn("LLM 429, retrying in", wait, "ms");
+        await new Promise((res) => setTimeout(res, wait));
+        continue;
+      }
+      if (!r.ok) {
+        const err = new Error("LLM Gateway error " + r.status + ": " + (await r.text()));
+        err.status = r.status;
+        throw err;
+      }
+      const data = await r.json();
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content) throw new Error("LLM Gateway returned no content");
+      return content;
     }
-    if (!r.ok) {
-      const err = new Error("LLM Gateway error " + r.status + ": " + (await r.text()));
-      err.status = r.status;
-      throw err;
-    }
-    const data = await r.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content) throw new Error("LLM Gateway returned no content");
-    return content;
-  }
-  throw lastErr;
+    throw lastErr;
+  });
 }
 
 // Pull the first JSON object out of a model reply (models sometimes wrap it in
@@ -241,6 +234,8 @@ next step. If the rep just did something well, say so briefly.
 
 Respond with ONLY a JSON object, no other text:
 {"category": one of ${JSON.stringify(NUDGE_CATEGORIES)}, "nudge": "max 14 words, imperative, specific to this moment"}`;
+
+  if (llmPending >= 2) return res.json({ nudge: null }); // keep the queue free for replies
 
   try {
     const raw = await callLLM(
